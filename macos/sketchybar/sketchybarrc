@@ -1,0 +1,133 @@
+#!/usr/bin/env bash
+#
+# SketchyBar — main configuration.
+# Replaces the old `spacebar` menu bar. Shell-based config; each bar item points
+# at a small plugin in plugins/. Wired to yabai via signals (see ../yabairc) so
+# the space + window items update on focus/space changes.
+#
+# Docs: https://felixkratz.github.io/SketchyBar/
+#
+# Layout (notch-safe — nothing is drawn in the centre):
+#   left:  [1 2 3 …]  <front app>            ·notch·            <wifi> <vol> <bat> <clock>  :right
+
+# Homebrew tools (yabai, jq, sketchybar, …) must be on PATH when launchd runs us.
+export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
+
+CONFIG_DIR="$HOME/.config/sketchybar"
+PLUGIN_DIR="$CONFIG_DIR/plugins"
+
+# shellcheck source=/dev/null
+source "$CONFIG_DIR/colors.sh"
+# shellcheck source=/dev/null
+source "$CONFIG_DIR/icons.sh"
+
+##### Bar appearance #####
+sketchybar --bar \
+  height=32 \
+  position=top \
+  sticky=on \
+  blur_radius=2 \
+  color="$BAR_COLOR" \
+  padding_left=8 \
+  padding_right=8 \
+  margin=0 \
+  y_offset=0 \
+  corner_radius=0 \
+  border_width=0
+
+##### Item defaults (inherited by every item added below) #####
+sketchybar --default \
+  updates=when_shown \
+  icon.font="$FONT_ICON:Regular:14.0" \
+  icon.color="$ICON_COLOR" \
+  icon.padding_left=8 \
+  icon.padding_right=4 \
+  label.font="$FONT_TEXT:Semibold:13.0" \
+  label.color="$LABEL_COLOR" \
+  label.padding_left=4 \
+  label.padding_right=8 \
+  padding_left=2 \
+  padding_right=2 \
+  icon.shadow.drawing=on \
+  icon.shadow.color=0xa0000000 \
+  icon.shadow.distance=2 \
+  label.shadow.drawing=on \
+  label.shadow.color=0xa0000000 \
+  label.shadow.distance=2 \
+  background.height=22 \
+  background.corner_radius=6
+
+##### Custom events #####
+# Bind the macOS network-change mach notification to a sketchybar event so the
+# wifi item refreshes the moment the connection changes.
+sketchybar --add event wifi_change "com.apple.system.config.network_change"
+
+##### LEFT: yabai spaces #####
+# One item per mission-control space. yabai uses mission-control spaces, so
+# `associated_space` lets SketchyBar track which is active ($SELECTED in the plugin).
+SPACE_COUNT=$(yabai -m query --spaces 2>/dev/null | jq 'length' 2>/dev/null)
+case "$SPACE_COUNT" in ''|*[!0-9]*) SPACE_COUNT=5 ;; esac
+[ "$SPACE_COUNT" -lt 1 ] && SPACE_COUNT=5
+
+for sid in $(seq 1 "$SPACE_COUNT"); do
+  sketchybar --add space "space.$sid" left \
+             --set "space.$sid" \
+                   associated_space="$sid" \
+                   icon="$sid" \
+                   icon.font="$FONT_TEXT:Semibold:14.0" \
+                   icon.color="$SPACE_INACTIVE_COLOR" \
+                   icon.highlight_color="$SPACE_ACTIVE_COLOR" \
+                   icon.padding_left=9 \
+                   icon.padding_right=9 \
+                   label.drawing=off \
+                   background.color="$ITEM_BG_COLOR" \
+                   background.corner_radius=6 \
+                   background.height=22 \
+                   background.drawing=off \
+                   click_script="yabai -m space --focus $sid" \
+                   script="$PLUGIN_DIR/space.sh" \
+             --subscribe "space.$sid" space_change
+done
+
+# Small gap, then the focused application name.
+sketchybar --add item space_separator left \
+           --set space_separator icon="$ICON_CHEVRON" label.drawing=off \
+                 icon.color="$GREY" icon.padding_left=8 icon.padding_right=8 \
+                 background.drawing=off \
+           --add item front_app left \
+           --set front_app \
+                 icon="$ICON_APP" \
+                 icon.color="$ACCENT_COLOR" \
+                 label.font="$FONT_TEXT:Bold:13.0" \
+                 script="$PLUGIN_DIR/front_app.sh" \
+           --subscribe front_app front_app_switched
+
+##### RIGHT: status items (added right→left: clock is rightmost) #####
+sketchybar --add item clock right \
+           --set clock \
+                 icon="$ICON_CLOCK" \
+                 update_freq=10 \
+                 script="$PLUGIN_DIR/clock.sh" \
+           --subscribe clock system_woke \
+           \
+           --add item battery right \
+           --set battery \
+                 update_freq=120 \
+                 script="$PLUGIN_DIR/battery.sh" \
+           --subscribe battery power_source_change system_woke \
+           \
+           --add item volume right \
+           --set volume \
+                 script="$PLUGIN_DIR/volume.sh" \
+           --subscribe volume volume_change \
+           \
+           --add item wifi right \
+           --set wifi \
+                 update_freq=30 \
+                 script="$PLUGIN_DIR/wifi.sh" \
+           --subscribe wifi wifi_change system_woke
+
+##### Finalize #####
+sketchybar --update
+
+echo "sketchybar configuration loaded.."

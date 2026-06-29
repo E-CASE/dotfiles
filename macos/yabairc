@@ -66,8 +66,18 @@ yabai -m rule --add app="iTerm2" manage=off
 
 echo "yabai configuration loaded.."
 
-# spacebar padding on top screen
-# SPACEBAR_HEIGHT=$(spacebar -m config height)
-SPACEBAR_HEIGHT=26
-#yabai -m config top_padding    $SPACEBAR_HEIGHT
-yabai -m config external_bar all:$SPACEBAR_HEIGHT:0
+# --- SketchyBar integration -------------------------------------------------
+# Reserve space at the top of every display for the bar. This MUST match the
+# `height` set in ~/.config/sketchybar/sketchybarrc (currently 32).
+yabai -m config external_bar all:32:0
+
+# Notify SketchyBar of yabai events so the space/window items stay in sync.
+# (`sketchybar` and `jq` are on PATH via the yabai launchd plist.)
+yabai -m signal --add event=space_changed      action="sketchybar --trigger space_change"     label=sb_space_change
+yabai -m signal --add event=display_changed    action="sketchybar --trigger display_change"   label=sb_display_change
+yabai -m signal --add event=window_focused     action="sketchybar --trigger window_focus"     label=sb_window_focus
+yabai -m signal --add event=window_created      action="sketchybar --trigger windows_change"   label=sb_window_created
+yabai -m signal --add event=window_destroyed    action="sketchybar --trigger windows_change"   label=sb_window_destroyed
+# Spaces are added/removed rarely; reload so the bar rebuilds its space items.
+yabai -m signal --add event=space_created       action="sketchybar --reload"                   label=sb_space_created
+yabai -m signal --add event=space_destroyed     action="sketchybar --reload"                   label=sb_space_destroyed
